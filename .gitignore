@@ -21,3 +21,4 @@ pnpm-debug.log*
 *.swo
 
 visual/artifacts/
+.github/workflows/visual-regression.yml
