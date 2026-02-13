@@ -97,9 +97,10 @@ function convertElement(
   const layer: LayerMeta = {
     type,
     name: generateLayerName(element),
-    // Fixed/sticky elements: position relative to parent (x from parent offset, y=0 for top-fixed)
-    x: (isFixed || isSticky) ? (rect.left - options.rootOffset.x) : (rect.left - options.rootOffset.x),
-    y: (isFixed || isSticky) ? 0 : (rect.top - options.rootOffset.y),
+    // Preserve captured viewport coordinates for all elements.
+    // Fixed/sticky nodes are marked as absolute via isAbsolutelyPositioned.
+    x: rect.left - options.rootOffset.x,
+    y: rect.top - options.rootOffset.y,
     width: rect.width,
     height: rect.height,
     fills: parseBackground(styles),
@@ -121,6 +122,19 @@ function convertElement(
       className: element.getAttribute('class') || undefined,
     },
   };
+
+  // Negative z-index absolute decorative layers are often rendered behind ancestor
+  // backgrounds in the browser but cannot be represented equivalently in Figma.
+  // Skip these to avoid false visual mismatches (e.g. hidden glow/shape blobs).
+  if (shouldSkipNegativeDecorativeLayer({
+    element,
+    type,
+    layer,
+    zIndex,
+    isAbsolute,
+  })) {
+    return null;
+  }
 
   // Handle native form controls (checkbox, radio) that don't expose styles via getComputedStyle
   if (element.tagName === 'INPUT') {
@@ -158,7 +172,19 @@ function convertElement(
       if (maxWidth && maxWidth !== 'none') {
         const maxW = parseFloat(maxWidth);
         if (!isNaN(maxW) && maxW > layer.width && maxW <= layer.width * 3) {
-          layer.width = maxW;
+          const nearMaxWidth = layer.width >= maxW * 0.9;
+          const hasFullWidthHint = hasFullWidthToken([
+            styles.width,
+            styles.minWidth,
+            styles.maxWidth,
+            styles.flexBasis,
+          ]);
+          const shouldExpandToMaxWidth =
+            (flexGrow !== undefined && flexGrow > 0) || nearMaxWidth || hasFullWidthHint;
+
+          if (shouldExpandToMaxWidth) {
+            layer.width = maxW;
+          }
         }
       }
     }
@@ -240,33 +266,9 @@ function convertElement(
       rootOffset: { x: rect.left, y: rect.top },
     };
 
-    // First pass: detect fixed elements at top to calculate offset
-    let fixedTopHeight = 0;
-    for (const child of element.children) {
-      const childStyles = window.getComputedStyle(child);
-      const childPos = childStyles.position;
-      if (childPos === 'fixed' || childPos === 'sticky') {
-        const childRect = child.getBoundingClientRect();
-        // Only count fixed elements at top (y near 0)
-        if (childRect.top < 100) {
-          fixedTopHeight = Math.max(fixedTopHeight, childRect.height);
-        }
-      }
-    }
-
     for (const child of element.children) {
       const childLayer = convertElement(child, childOptions, depth + 1);
       if (childLayer) {
-        // Adjust non-fixed content to account for fixed header
-        // This makes content start at y=0 instead of y=headerHeight
-        if (!childLayer.isAbsolutelyPositioned && fixedTopHeight > 0) {
-          // Only adjust if the element's y is close to fixedTopHeight
-          if (Math.abs(childLayer.y - fixedTopHeight) < 20) {
-            childLayer.y = 0;
-          } else if (childLayer.y > fixedTopHeight) {
-            childLayer.y -= fixedTopHeight;
-          }
-        }
         children.push(childLayer);
       }
     }
@@ -332,8 +334,8 @@ function convertElement(
         name: directText.slice(0, 20) + (directText.length > 20 ? '...' : ''),
         x: textX,
         y: textY,
-        width: Math.max(1, textWidth),
-        height: Math.max(1, textHeight),
+        width: normalizeTextDimension(textWidth, contentWidth, 1),
+        height: normalizeTextDimension(textHeight, contentHeight, 1),
         fills: [],
         strokes: null,
         effects: parseTextShadow(styles),
@@ -362,6 +364,21 @@ function convertElement(
     const afterElement = capturePseudoElement(element, '::after', rect);
     if (afterElement) {
       children.push(afterElement); // Append ::after
+    }
+
+    // Preserve leading inset for auto-layout containers.
+    // During import, non-absolute auto-layout children are reset to (0,0),
+    // so the initial flow offset must be carried by container padding.
+    if (layer.autoLayout) {
+      const flowChildren = children.filter((c) => !c.isAbsolutelyPositioned);
+      if (flowChildren.length > 0) {
+        if (layer.autoLayout.mode === 'VERTICAL') {
+          const minY = Math.min(...flowChildren.map((c) => c.y));
+          if (minY > 0) {
+            layer.autoLayout.paddingTop = Math.max(layer.autoLayout.paddingTop, Math.round(minY));
+          }
+        }
+      }
     }
 
     // Calculate itemSpacing from actual child positions if auto-layout is active
@@ -706,6 +723,69 @@ function isTextOnlyElement(element: Element): boolean {
   return !!text && text.length > 0;
 }
 
+function hasFullWidthToken(values: Array<string | undefined>): boolean {
+  for (const value of values) {
+    if (!value) continue;
+    const normalized = value.toLowerCase().replace(/\s+/g, '');
+    if (!normalized) continue;
+    if (normalized.includes('100%')) return true;
+    if (normalized.includes('fill-available') || normalized === 'stretch') return true;
+  }
+  return false;
+}
+
+function normalizeTextDimension(measured: number, fallback: number, buffer = 0): number {
+  const base = Number.isFinite(measured) && measured > 0 ? measured : fallback;
+  return Math.max(1, Math.round(base + buffer));
+}
+
+function shouldSkipNegativeDecorativeLayer(params: {
+  element: Element;
+  type: LayerType;
+  layer: LayerMeta;
+  zIndex: number;
+  isAbsolute: boolean;
+}): boolean {
+  if (!params.isAbsolute || params.zIndex >= 0) {
+    return false;
+  }
+
+  if (params.type === 'TEXT') {
+    return false;
+  }
+
+  const tagName = params.element.tagName.toLowerCase();
+  if (tagName === 'img' || tagName === 'svg' || tagName === 'video' || tagName === 'canvas') {
+    return false;
+  }
+
+  if (params.element.children.length > 0) {
+    return false;
+  }
+
+  const directText = getDirectTextContent(params.element);
+  if (directText.trim().length > 0) {
+    return false;
+  }
+
+  const hasVisibleSolidFill = params.layer.fills.some((fill) => {
+    if (fill.type !== 'SOLID') return false;
+    const fillOpacity = fill.opacity ?? 1;
+    const alpha = fill.color?.a ?? 1;
+    return (fillOpacity * alpha) > 0.04;
+  });
+  if (!hasVisibleSolidFill) {
+    return false;
+  }
+
+  if (params.layer.strokes || params.layer.effects.length > 0) {
+    return false;
+  }
+
+  const area = params.layer.width * params.layer.height;
+  return area >= 64;
+}
+
 /**
  * Parse CSS transform for rotation angle
  * Handles: rotate(Xdeg), rotate(Xrad), rotate(Xturn)
@@ -995,6 +1075,20 @@ function capturePseudoElement(
   // Estimate size from computed styles
   const width = parseFloat(styles.width) || 0;
   const height = parseFloat(styles.height) || 0;
+  const area = width * height;
+  const hasVisualStyling = fills.length > 0 || !!strokes || effects.length > 0;
+  const isDecorativePseudo = !isTextContent && !content.startsWith('url(');
+
+  // Ignore tiny/near-transparent decorative pseudo-elements to reduce visual noise.
+  if (opacity <= 0.02) {
+    return null;
+  }
+  if (isDecorativePseudo && (opacity < 0.08 || area <= 16)) {
+    return null;
+  }
+  if (!isTextContent && !hasVisualStyling && area <= 64) {
+    return null;
+  }
 
   // Skip if zero-size and no text
   if (width === 0 && height === 0 && !isTextContent && fills.length === 0) {

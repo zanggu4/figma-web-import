@@ -159,11 +159,12 @@ async function createFrameNode(layer: LayerMeta, options: NodeFactoryOptions): P
         // Figma auto-layout overrides x/y when child is first appended
         childNode.x = childMeta.x;
         childNode.y = childMeta.y;
+        // Keep captured dimensions for absolute children to prevent reflow drift.
+        reapplyAbsoluteSize(childNode, childMeta.width, childMeta.height);
         // Set constraints for proper positioning
         if ('constraints' in childNode) {
-          const isFullWidth = childMeta.width >= (layer.width * 0.9);
           (childNode as FrameNode).constraints = {
-            horizontal: isFullWidth ? 'STRETCH' : 'MIN',
+            horizontal: 'MIN',
             vertical: 'MIN',
           };
         }
@@ -171,6 +172,8 @@ async function createFrameNode(layer: LayerMeta, options: NodeFactoryOptions): P
         const hasFlexGrow = childMeta.flexGrow && childMeta.flexGrow > 0;
         const layoutMode = layer.autoLayout?.mode;
         const shouldStretchCrossAxis = layer.autoLayout?.counterAxisStretch;
+        const textNode = childNode.type === 'TEXT' ? (childNode as TextNode) : null;
+        const isHugText = !!textNode && textNode.textAutoResize === 'WIDTH_AND_HEIGHT';
 
         // For block (VERTICAL) layouts, children that are nearly full-width should FILL
         const parentContentWidth = layer.width -
@@ -182,18 +185,23 @@ async function createFrameNode(layer: LayerMeta, options: NodeFactoryOptions): P
           // Check if all flex-grow siblings have the same value
           // If different flex-grow values, use FIXED to preserve computed widths
           const useFlexFill = hasFlexGrow && hasUniformFlexGrow;
-          // Single-line TEXT nodes should use HUG to maintain textAutoResize compatibility
-          const isHugText = childNode.type === 'TEXT' &&
-            (childNode as TextNode).textAutoResize === 'WIDTH_AND_HEIGHT';
-          (childNode as FrameNode | TextNode).layoutSizingHorizontal = useFlexFill ? 'FILL' : (isHugText ? 'HUG' : 'FIXED');
-          (childNode as FrameNode | TextNode).layoutSizingVertical = shouldStretchCrossAxis ? 'FILL' : (isHugText ? 'HUG' : 'FIXED');
+          if (isHugText) {
+            (childNode as FrameNode | TextNode).layoutSizingHorizontal = 'HUG';
+            (childNode as FrameNode | TextNode).layoutSizingVertical = 'HUG';
+          } else {
+            (childNode as FrameNode | TextNode).layoutSizingHorizontal = useFlexFill ? 'FILL' : 'FIXED';
+            (childNode as FrameNode | TextNode).layoutSizingVertical = shouldStretchCrossAxis ? 'FILL' : 'FIXED';
+          }
         } else if (layoutMode === 'VERTICAL') {
-          const isHugText = childNode.type === 'TEXT' &&
-            (childNode as TextNode).textAutoResize === 'WIDTH_AND_HEIGHT';
           // In vertical layout, children that span ~full width should FILL horizontally
-          (childNode as FrameNode | TextNode).layoutSizingHorizontal =
-            (shouldStretchCrossAxis || childFillsWidth) ? 'FILL' : (isHugText ? 'HUG' : 'FIXED');
-          (childNode as FrameNode | TextNode).layoutSizingVertical = hasFlexGrow ? 'FILL' : (isHugText ? 'HUG' : 'FIXED');
+          if (isHugText) {
+            (childNode as FrameNode | TextNode).layoutSizingHorizontal = 'HUG';
+            (childNode as FrameNode | TextNode).layoutSizingVertical = 'HUG';
+          } else {
+            (childNode as FrameNode | TextNode).layoutSizingHorizontal =
+              (shouldStretchCrossAxis || childFillsWidth) ? 'FILL' : 'FIXED';
+            (childNode as FrameNode | TextNode).layoutSizingVertical = hasFlexGrow ? 'FILL' : 'FIXED';
+          }
         } else {
           (childNode as FrameNode | TextNode).layoutSizingHorizontal = 'FIXED';
           (childNode as FrameNode | TextNode).layoutSizingVertical = 'FIXED';
@@ -219,25 +227,24 @@ async function createTextNode(layer: LayerMeta): Promise<TextNode> {
     const textStyles = layer.textStyles;
     let fontLoaded = false;
     let mappedFontFamily = 'Inter';
+    let loadedFontStyle = 'Regular';
+    const hasKoreanText = containsHangul(layer.characters);
 
     // Try to load the specific font if available BEFORE setting any text properties
     if (textStyles) {
-      // Map web font to Figma-compatible font
-      mappedFontFamily = mapFontFamily(textStyles.fontFamily);
-      const fontStyle = getFontStyle(textStyles.fontWeight, textStyles.fontStyle);
-
-      // Try mapped font first, then original, then Inter fallback
-      const fontsToTry = [
-        { family: mappedFontFamily, style: fontStyle },
-        { family: textStyles.fontFamily, style: fontStyle },
-        { family: 'Inter', style: fontStyle },
-        { family: 'Inter', style: 'Regular' },
-      ];
+      const desiredStyle = getFontStyle(textStyles.fontWeight, textStyles.fontStyle);
+      const fontsToTry = buildFontCandidates({
+        preferredFamily: mapFontFamily(textStyles.fontFamily),
+        sourceFamily: textStyles.fontFamily,
+        desiredStyle,
+        hasKoreanText,
+      });
 
       for (const font of fontsToTry) {
         try {
           await figma.loadFontAsync(font);
           mappedFontFamily = font.family;
+          loadedFontStyle = font.style;
           fontLoaded = true;
           break;
         } catch {
@@ -248,6 +255,8 @@ async function createTextNode(layer: LayerMeta): Promise<TextNode> {
       if (!fontLoaded) {
         console.warn(`Failed to load any font for ${textStyles.fontFamily}, using Inter fallback`);
         mappedFontFamily = 'Inter';
+        loadedFontStyle = 'Regular';
+        fontLoaded = true;
       }
     }
 
@@ -260,7 +269,7 @@ async function createTextNode(layer: LayerMeta): Promise<TextNode> {
       if (fontLoaded) {
         text.fontName = {
           family: mappedFontFamily,
-          style: getFontStyle(textStyles.fontWeight, textStyles.fontStyle),
+          style: loadedFontStyle,
         };
       }
 
@@ -340,11 +349,13 @@ async function createTextNode(layer: LayerMeta): Promise<TextNode> {
           const segWeight = segment.fontWeight ?? textStyles?.fontWeight ?? 400;
           const segStyle = segment.fontStyle ?? textStyles?.fontStyle;
           const style = getFontStyle(segWeight, segStyle);
-          try {
-            await figma.loadFontAsync({ family: mappedFontFamily, style });
-            text.setRangeFontName(start, end, { family: mappedFontFamily, style });
-          } catch {
-            // Font style not available, skip
+          const segFont = await resolveFontForRange({
+            baseFamily: mappedFontFamily,
+            desiredStyle: style,
+            hasKoreanText,
+          });
+          if (segFont) {
+            text.setRangeFontName(start, end, segFont);
           }
         }
 
@@ -368,27 +379,14 @@ async function createTextNode(layer: LayerMeta): Promise<TextNode> {
   const textHeight = layer.height;
   const hasLineBreaks = layer.characters?.includes('\n') || false;
   const fontSize = layer.textStyles?.fontSize || 16;
-  // Heuristic: if height > 1.8x fontSize, it's likely multi-line
-  const isMultiLine = hasLineBreaks || (textHeight > fontSize * 1.8 && textWidth > 80);
-
-  if (isMultiLine) {
-    // Check if text only wraps at explicit \n (no word-wrapping needed)
-    const explicitLineCount = (layer.characters?.split('\n').length || 1);
-    const lineHeightPx = (layer.textStyles?.lineHeight !== 'AUTO' && typeof layer.textStyles?.lineHeight === 'number')
-      ? layer.textStyles.lineHeight
-      : fontSize * 1.2;
-    const heightBasedLineCount = Math.max(1, Math.round(textHeight / lineHeightPx));
-
-    if (hasLineBreaks && explicitLineCount >= heightBasedLineCount) {
-      // Text only breaks at explicit \n - use auto width so each line sizes naturally
-      // This prevents incorrect word-wrapping due to font metric differences
-      text.textAutoResize = 'WIDTH_AND_HEIGHT';
-    } else {
-      // Word-wrapping text: fix width with buffer and let height auto-expand
-      const widthBuffer = 10;
-      text.resize(Math.max(1, textWidth + widthBuffer), Math.max(1, textHeight));
-      text.textAutoResize = 'HEIGHT';
-    }
+  // Explicit line breaks (from \n / <br>) should not be re-wrapped by fixed width.
+  if (hasLineBreaks) {
+    text.textAutoResize = 'WIDTH_AND_HEIGHT';
+  } else if (textHeight > fontSize * 1.8 && textWidth > 80) {
+    // Word-wrapping text: fix width with buffer and let height auto-expand
+    const widthBuffer = 10;
+    text.resize(Math.max(1, textWidth + widthBuffer), Math.max(1, textHeight));
+    text.textAutoResize = 'HEIGHT';
   } else {
     // Single-line: auto width - text sizes itself naturally
     text.textAutoResize = 'WIDTH_AND_HEIGHT';
@@ -467,6 +465,23 @@ function resetChildPosition(child: LayerMeta): LayerMeta {
     y: 0,
     // DO NOT recursively reset - grandchildren keep their relative positions
   };
+}
+
+function reapplyAbsoluteSize(node: SceneNode, width: number, height: number): void {
+  if (!('resize' in node) || typeof node.resize !== 'function') {
+    return;
+  }
+
+  // Keep TEXT sizing behavior intact; text auto-resize should control its own dimensions.
+  if (node.type === 'TEXT') {
+    return;
+  }
+
+  try {
+    node.resize(Math.max(1, width), Math.max(1, height));
+  } catch {
+    // Some node variants may reject resize in specific states.
+  }
 }
 
 /**
@@ -675,6 +690,73 @@ function convertEffects(effects: LayerMeta['effects']): Effect[] {
   }
 
   return figmaEffects;
+}
+
+function containsHangul(text: string): boolean {
+  return /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/.test(text);
+}
+
+function pushUniqueFont(
+  target: FontName[],
+  seen: Set<string>,
+  family: string | undefined,
+  style: string
+): void {
+  if (!family) {
+    return;
+  }
+  const key = `${family}__${style}`;
+  if (seen.has(key)) {
+    return;
+  }
+  seen.add(key);
+  target.push({ family, style });
+}
+
+function buildFontCandidates(params: {
+  preferredFamily?: string;
+  sourceFamily?: string;
+  desiredStyle: string;
+  hasKoreanText?: boolean;
+}): FontName[] {
+  const out: FontName[] = [];
+  const seen = new Set<string>();
+  const style = params.desiredStyle;
+
+  if (params.hasKoreanText) {
+    pushUniqueFont(out, seen, 'Pretendard', style);
+    pushUniqueFont(out, seen, 'Noto Sans KR', style);
+  }
+
+  pushUniqueFont(out, seen, params.preferredFamily, style);
+  pushUniqueFont(out, seen, params.sourceFamily, style);
+  pushUniqueFont(out, seen, 'Inter', style);
+  pushUniqueFont(out, seen, 'Inter', 'Regular');
+
+  return out;
+}
+
+async function resolveFontForRange(params: {
+  baseFamily: string;
+  desiredStyle: string;
+  hasKoreanText?: boolean;
+}): Promise<FontName | null> {
+  const candidates = buildFontCandidates({
+    preferredFamily: params.baseFamily,
+    desiredStyle: params.desiredStyle,
+    hasKoreanText: params.hasKoreanText,
+  });
+
+  for (const font of candidates) {
+    try {
+      await figma.loadFontAsync(font);
+      return font;
+    } catch {
+      // Try next fallback.
+    }
+  }
+
+  return null;
 }
 
 /**

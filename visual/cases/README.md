@@ -19,6 +19,10 @@ Each `*.json` file defines one visual-compare scenario.
 - `figma.fileDepth` (default 3)
 - `figma.scale`
 - `comparison.maxDiffRatio`, `comparison.minSSIM`, `comparison.pixelmatchThreshold`
+- `comparison.alignment.enabled`, `comparison.alignment.maxShiftX`, `comparison.alignment.maxShiftY`, `comparison.alignment.downsample`, `comparison.alignment.refine`
+- `comparison.targets.global.rawDiffMax`, `comparison.targets.global.alignedDiffMax`, `comparison.targets.global.rawSSIMMin`, `comparison.targets.global.alignedSSIMMin`
+- `comparison.sectionGates[]` with `{ name, rect: { x, y, width, height }, rawDiffMax?, alignedDiffMax?, rawSSIMMin?, alignedSSIMMin? }`
+  - `rawSSIMMin` / `alignedSSIMMin` are optional. Omit them if section pass should be diff-only.
 - `masks[]` rectangle list `{ x, y, width, height }`
 
 Environment variables override case file values:

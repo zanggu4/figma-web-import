@@ -27,7 +27,50 @@
   "comparison": {
     "maxDiffRatio": 0.03,
     "minSSIM": 0.97,
-    "pixelmatchThreshold": 0.1
+    "pixelmatchThreshold": 0.1,
+    "targets": {
+      "global": {
+        "rawDiffMax": 0.05,
+        "alignedDiffMax": 0.03,
+        "rawSSIMMin": 0.88,
+        "alignedSSIMMin": 0.97
+      }
+    },
+    "alignment": {
+      "enabled": true,
+      "maxShiftX": 120,
+      "maxShiftY": 120,
+      "downsample": 4,
+      "refine": true
+    },
+    "sectionGates": [
+      {
+        "name": "hero",
+        "rect": { "x": 0, "y": 93, "width": 1440, "height": 765 },
+        "rawDiffMax": 0.07,
+        "alignedDiffMax": 0.05
+      },
+      {
+        "name": "benefits",
+        "rect": { "x": 0, "y": 858, "width": 1440, "height": 908 },
+        "rawDiffMax": 0.03,
+        "alignedDiffMax": 0.03
+      },
+      {
+        "name": "process",
+        "rect": { "x": 0, "y": 1766, "width": 1440, "height": 596 }
+      },
+      {
+        "name": "cta",
+        "rect": { "x": 0, "y": 2362, "width": 1440, "height": 608 },
+        "rawDiffMax": 0.02,
+        "alignedDiffMax": 0.02
+      },
+      {
+        "name": "footer",
+        "rect": { "x": 0, "y": 2970, "width": 1440, "height": 414 }
+      }
+    ]
   },
   "masks": [
     {

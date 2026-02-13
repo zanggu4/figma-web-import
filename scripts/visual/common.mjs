@@ -140,6 +140,56 @@ export function getThresholds(caseData) {
   };
 }
 
+export function getComparisonTargets(caseData) {
+  const thresholds = getThresholds(caseData);
+  const global = caseData?.comparison?.targets?.global || {};
+
+  return {
+    global: {
+      rawDiffMax: Number(global.rawDiffMax ?? thresholds.maxDiffRatio),
+      alignedDiffMax: Number(global.alignedDiffMax ?? thresholds.maxDiffRatio),
+      rawSSIMMin: Number(global.rawSSIMMin ?? thresholds.minSSIM),
+      alignedSSIMMin: Number(global.alignedSSIMMin ?? thresholds.minSSIM),
+    },
+  };
+}
+
+export function getAlignmentOptions(caseData) {
+  const raw = caseData?.comparison?.alignment || {};
+  return {
+    enabled: raw.enabled ?? false,
+    maxShiftX: Math.max(0, Number(raw.maxShiftX ?? 120)),
+    maxShiftY: Math.max(0, Number(raw.maxShiftY ?? 120)),
+    downsample: Math.max(1, Number(raw.downsample ?? 4)),
+    refine: raw.refine ?? true,
+  };
+}
+
+export function getSectionGates(caseData, fallbackTargets) {
+  const list = caseData?.comparison?.sectionGates;
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  return list
+    .filter((item) => item && item.name && item.rect)
+    .map((item) => ({
+      name: String(item.name),
+      rect: {
+        x: Number(item.rect.x ?? 0),
+        y: Number(item.rect.y ?? 0),
+        width: Number(item.rect.width ?? 0),
+        height: Number(item.rect.height ?? 0),
+      },
+      rawDiffMax: Number(item.rawDiffMax ?? fallbackTargets.global.rawDiffMax),
+      alignedDiffMax: Number(item.alignedDiffMax ?? fallbackTargets.global.alignedDiffMax),
+      rawSSIMMin:
+        item.rawSSIMMin === undefined ? undefined : Number(item.rawSSIMMin),
+      alignedSSIMMin:
+        item.alignedSSIMMin === undefined ? undefined : Number(item.alignedSSIMMin),
+    }));
+}
+
 export function getViewport(caseData) {
   return {
     width: caseData?.viewport?.width ?? 1440,

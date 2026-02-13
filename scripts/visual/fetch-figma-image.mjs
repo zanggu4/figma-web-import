@@ -13,11 +13,17 @@ import {
 } from './common.mjs';
 
 async function fetchJson(url, token, label) {
-  const response = await fetch(url, {
-    headers: {
-      'X-Figma-Token': token,
-    },
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        'X-Figma-Token': token,
+      },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} request failed: ${reason}`);
+  }
 
   if (!response.ok) {
     const body = await response.text();
@@ -54,6 +60,60 @@ function collectExportableNodes(node, nodes) {
       collectExportableNodes(child, nodes);
     }
   }
+}
+
+function normalizeNodeId(input) {
+  if (!input) return '';
+  let raw = String(input).trim();
+  if (!raw) return '';
+
+  // Accept full Figma URL as input.
+  if (raw.includes('figma.com/')) {
+    try {
+      const parsed = new URL(raw);
+      const fromQuery = parsed.searchParams.get('node-id');
+      if (fromQuery) {
+        raw = fromQuery;
+      }
+    } catch {
+      // Keep raw input if URL parsing fails.
+    }
+  }
+
+  // Sometimes the node-id may include extra params after copy/paste.
+  raw = raw.split('&')[0].split('?')[0].trim();
+
+  // Figma URL uses hyphen separator (e.g. 41-2), API expects colon (41:2).
+  if (/^\d+-\d+$/.test(raw)) {
+    raw = raw.replace('-', ':');
+  }
+
+  return raw;
+}
+
+function describeImagePayload(payload, requestedNodeId) {
+  const err = payload?.err ? ` err=${payload.err}` : '';
+  const imageMap = payload?.images && typeof payload.images === 'object' ? payload.images : {};
+  const keys = Object.keys(imageMap);
+  const hasRequestedKey = keys.includes(requestedNodeId);
+  const requestedValue = hasRequestedKey ? imageMap[requestedNodeId] : undefined;
+  return `requestedNodeId=${requestedNodeId}, images.keys=[${keys.join(', ')}], requestedValue=${requestedValue ?? 'undefined'}${err}`;
+}
+
+function buildImagesApiUrl(fileKey, nodeId, scale) {
+  const url = new URL(`https://api.figma.com/v1/images/${fileKey}`);
+  url.searchParams.set('ids', nodeId);
+  url.searchParams.set('format', 'png');
+  url.searchParams.set('scale', String(scale));
+  url.searchParams.set('use_absolute_bounds', 'true');
+  return url;
+}
+
+async function fetchImageUrlForNode(config, nodeId) {
+  const url = buildImagesApiUrl(config.fileKey, nodeId, config.scale);
+  const payload = await fetchJson(url, config.token, 'Figma images API');
+  const imageUrl = payload?.images?.[nodeId] || Object.values(payload?.images || {})[0];
+  return { payload, imageUrl };
 }
 
 async function resolveNodeIdByFrameName(config) {
@@ -104,7 +164,7 @@ async function resolveNodeIdByFrameName(config) {
 function resolveFigmaConfig(caseData) {
   const token = requiredEnv('FIGMA_TOKEN', caseData?.figma?.token);
   const fileKey = requiredEnv('FIGMA_FILE_KEY', caseData?.figma?.fileKey);
-  const nodeId = process.env.FIGMA_NODE_ID || caseData?.figma?.nodeId || '';
+  const nodeId = normalizeNodeId(process.env.FIGMA_NODE_ID || caseData?.figma?.nodeId || '');
   const frameName = process.env.FIGMA_FRAME_NAME || caseData?.figma?.frameName || '';
 
   if (!nodeId && !frameName) {
@@ -131,32 +191,54 @@ export async function fetchFigmaImage({ caseData, caseId, outDir }) {
 
   await ensureDir(outputDir);
 
-  const resolvedNodeId = config.frameName
-    ? await resolveNodeIdByFrameName(config)
-    : config.nodeId;
+  // Prefer explicit node ID over frame-name lookup.
+  // This avoids accidental mismatches when case JSON still has a stale frameName.
+  const resolvedNodeIdRaw = config.nodeId
+    ? config.nodeId
+    : (config.frameName ? await resolveNodeIdByFrameName(config) : '');
+  const resolvedNodeId = normalizeNodeId(resolvedNodeIdRaw);
 
   if (!resolvedNodeId) {
     throw new Error('Could not resolve FIGMA node id. Set FIGMA_FRAME_NAME or FIGMA_NODE_ID.');
   }
 
-  if (config.frameName) {
+  if (!config.nodeId && config.frameName) {
     console.log(`Resolved FIGMA_NODE_ID from frame name "${config.frameName}": ${resolvedNodeId}`);
   }
 
-  const url = new URL(`https://api.figma.com/v1/images/${config.fileKey}`);
-  url.searchParams.set('ids', resolvedNodeId);
-  url.searchParams.set('format', 'png');
-  url.searchParams.set('scale', String(config.scale));
-  url.searchParams.set('use_absolute_bounds', 'true');
+  let exportedNodeId = resolvedNodeId;
+  let { payload: imagesPayload, imageUrl } = await fetchImageUrlForNode(config, exportedNodeId);
 
-  const imagesPayload = await fetchJson(url, config.token, 'Figma images API');
-  const imageUrl = imagesPayload?.images?.[resolvedNodeId] || Object.values(imagesPayload?.images || {})[0];
-
-  if (!imageUrl || typeof imageUrl !== 'string') {
-    throw new Error('Figma images API did not return an image URL. Check node selection and FIGMA_FILE_KEY.');
+  // If explicit node ID is stale/non-renderable, fall back to latest frame-name match.
+  if ((!imageUrl || typeof imageUrl !== 'string') && config.nodeId && config.frameName) {
+    const fallbackNodeId = normalizeNodeId(await resolveNodeIdByFrameName(config));
+    if (fallbackNodeId && fallbackNodeId !== exportedNodeId) {
+      const fallbackResult = await fetchImageUrlForNode(config, fallbackNodeId);
+      if (fallbackResult.imageUrl && typeof fallbackResult.imageUrl === 'string') {
+        console.warn(
+          `FIGMA_NODE_ID "${exportedNodeId}" returned no image. Falling back to frame "${config.frameName}" -> "${fallbackNodeId}".`
+        );
+        exportedNodeId = fallbackNodeId;
+        imagesPayload = fallbackResult.payload;
+        imageUrl = fallbackResult.imageUrl;
+      }
+    }
   }
 
-  const imageResponse = await fetch(imageUrl);
+  if (!imageUrl || typeof imageUrl !== 'string') {
+    const detail = describeImagePayload(imagesPayload, exportedNodeId);
+    throw new Error(
+      `Figma images API did not return an image URL. Check node selection and FIGMA_FILE_KEY. ${detail}`
+    );
+  }
+
+  let imageResponse;
+  try {
+    imageResponse = await fetch(imageUrl);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to download Figma image: ${reason}`);
+  }
   if (!imageResponse.ok) {
     const body = await imageResponse.text();
     throw new Error(`Failed to download Figma image (${imageResponse.status}): ${body}`);
@@ -166,7 +248,7 @@ export async function fetchFigmaImage({ caseData, caseId, outDir }) {
   await fs.writeFile(paths.figmaPng, buffer);
 
   await writeJson(`${paths.figmaPng}.meta.json`, {
-    nodeId: resolvedNodeId,
+    nodeId: exportedNodeId,
     frameName: config.frameName || null,
     fileKey: config.fileKey,
     pageName: config.pageName || null,

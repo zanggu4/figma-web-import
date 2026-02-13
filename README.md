@@ -137,6 +137,8 @@ pnpm --filter @figma-web-import/shared build:iife
 
 Configure case file:
 - `visual/cases/example.local.json`
+- If needed, tune `comparison.alignment` to auto-correct global x/y offsets before scoring.
+- Add `comparison.targets.global` and `comparison.sectionGates` to enforce global + section pass gates.
 
 Configure `.env` values:
 ```bash
@@ -173,6 +175,15 @@ Artifacts are written to `visual/artifacts/<case-id>/`:
 - `diff.png`
 - `report.json`
 - `report.md`
+
+`report.json` includes both raw and aligned metrics:
+- `rawDiffRatio`, `rawSSIM`
+- `alignedDiffRatio`, `alignedSSIM`
+- `alignment.dx`, `alignment.dy`
+- `targets.global`
+- `sections[]` with per-section pass/fail metrics
+- `summary.topOffenders[]`
+- `sections[].targets.rawSSIMMin` / `sections[].targets.alignedSSIMMin` are optional per gate
 
 ## Supported Conversions
 
