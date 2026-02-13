@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .hero-section {
+      position: relative;
+      width: 600px;
+      height: 400px;
+      background-image: url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4');
+      background-size: cover;
+      background-position: center;
+    }
+  </style>
+</head>
+<body class="p-8">
+  <h1 class="text-2xl mb-4">Overlay Transparency Test</h1>
+
+  <!-- Test case: Semi-transparent overlay over background image -->
+  <div class="hero-section">
+    <div class="bg-black/50 w-full h-full flex items-center justify-center">
+      <h2 class="text-white text-4xl font-bold">Hero Title</h2>
+    </div>
+  </div>
+
+  <!-- Control: Opaque overlay -->
+  <div class="hero-section mt-8">
+    <div class="bg-black w-full h-full flex items-center justify-center">
+      <h2 class="text-white text-4xl font-bold">Opaque Overlay</h2>
+    </div>
+  </div>
+
+  <!-- Control: Different opacity levels -->
+  <div class="hero-section mt-8">
+    <div class="bg-black/25 w-full h-full flex items-center justify-center">
+      <h2 class="text-white text-4xl font-bold">25% Opacity</h2>
+    </div>
+  </div>
+
+  <!-- Test: Manual rgba -->
+  <div class="hero-section mt-8">
+    <div class="w-full h-full flex items-center justify-center" style="background-color: rgba(0, 0, 0, 0.5);">
+      <h2 class="text-white text-4xl font-bold">Manual RGBA</h2>
+    </div>
+  </div>
+</body>
+</html>

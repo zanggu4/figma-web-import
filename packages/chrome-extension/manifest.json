@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Figma Web Import",
+  "version": "0.0.1",
+  "description": "Capture web pages and import them into Figma as editable designs",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html"
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/capture.ts"],
+      "run_at": "document_idle"
+    }
+  ]
+}

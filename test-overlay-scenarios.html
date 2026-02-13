@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .bg-image {
+      background-image: url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4');
+      background-size: cover;
+      background-position: center;
+    }
+  </style>
+</head>
+<body class="p-8 space-y-8">
+  <h1 class="text-2xl font-bold mb-4">Overlay Transparency Test Scenarios</h1>
+
+  <!-- Scenario 1: Separate elements (most common pattern) -->
+  <div>
+    <h2 class="text-xl mb-2">Scenario 1: Overlay as child element</h2>
+    <div class="bg-image w-[600px] h-[300px]">
+      <div class="bg-black/50 w-full h-full flex items-center justify-center">
+        <h3 class="text-white text-2xl font-bold">Overlay Text</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scenario 2: Same element with both (less common) -->
+  <div>
+    <h2 class="text-xl mb-2">Scenario 2: Background image + overlay on same element</h2>
+    <div class="bg-image bg-black/50 w-[600px] h-[300px] flex items-center justify-center">
+      <h3 class="text-white text-2xl font-bold">Overlay Text</h3>
+    </div>
+  </div>
+
+  <!-- Scenario 3: Different opacity levels -->
+  <div>
+    <h2 class="text-xl mb-2">Scenario 3: Different opacity levels</h2>
+    <div class="flex gap-4">
+      <div class="bg-image w-[200px] h-[150px]">
+        <div class="bg-black/25 w-full h-full flex items-center justify-center">
+          <span class="text-white text-sm">25%</span>
+        </div>
+      </div>
+      <div class="bg-image w-[200px] h-[150px]">
+        <div class="bg-black/50 w-full h-full flex items-center justify-center">
+          <span class="text-white text-sm">50%</span>
+        </div>
+      </div>
+      <div class="bg-image w-[200px] h-[150px]">
+        <div class="bg-black/75 w-full h-full flex items-center justify-center">
+          <span class="text-white text-sm">75%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scenario 4: Manual rgba for comparison -->
+  <div>
+    <h2 class="text-xl mb-2">Scenario 4: Manual RGBA</h2>
+    <div class="bg-image w-[600px] h-[300px]">
+      <div class="w-full h-full flex items-center justify-center" style="background-color: rgba(0, 0, 0, 0.5);">
+        <h3 class="text-white text-2xl font-bold">Manual RGBA</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scenario 5: White overlay for visibility check -->
+  <div>
+    <h2 class="text-xl mb-2">Scenario 5: White overlay (should lighten image)</h2>
+    <div class="bg-image w-[600px] h-[300px]">
+      <div class="bg-white/50 w-full h-full flex items-center justify-center">
+        <h3 class="text-black text-2xl font-bold">White Overlay</h3>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
