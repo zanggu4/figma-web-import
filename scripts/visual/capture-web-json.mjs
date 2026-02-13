@@ -86,21 +86,46 @@ export async function captureWebAndJson({ caseData, caseId, outDir }) {
         );
       }
 
+      const docEl = document.documentElement;
+      const body = document.body;
+      const useFullPage = !captureSelector;
+
+      const viewport = useFullPage
+        ? {
+            width: Math.max(
+              window.innerWidth,
+              docEl?.scrollWidth ?? 0,
+              docEl?.offsetWidth ?? 0,
+              body?.scrollWidth ?? 0,
+              body?.offsetWidth ?? 0,
+              Math.ceil(root.x + root.width)
+            ),
+            height: Math.max(
+              window.innerHeight,
+              docEl?.scrollHeight ?? 0,
+              docEl?.offsetHeight ?? 0,
+              body?.scrollHeight ?? 0,
+              body?.offsetHeight ?? 0,
+              Math.ceil(root.y + root.height)
+            ),
+          }
+        : {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          };
+
       return {
         version: window.__figmaCapture.VERSION,
         capturedAt: new Date().toISOString(),
         sourceUrl: window.location.href,
-        viewport: {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        },
+        viewport,
         root,
       };
     }, selector);
 
     await page.screenshot({
       path: paths.webPng,
-      fullPage: false,
+      fullPage: !selector,
     });
 
     await writeJson(paths.captureJson, captureData);

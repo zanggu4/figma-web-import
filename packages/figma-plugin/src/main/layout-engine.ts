@@ -43,10 +43,21 @@ export async function importToFigma(
     frame.name = opts.frameName;
     frame.x = opts.offsetX;
     frame.y = opts.offsetY;
-    frame.resize(
+    // Transform root coordinates before measuring required frame size.
+    const transformedRoot = transformToFrameCoordinates(scaledRoot);
+    const contentBounds = measureLayerBounds(transformedRoot);
+    const frameWidth = Math.max(
+      1,
       data.viewport.width * opts.scale,
-      data.viewport.height * opts.scale
+      Math.ceil(contentBounds.maxX)
     );
+    const frameHeight = Math.max(
+      1,
+      data.viewport.height * opts.scale,
+      Math.ceil(contentBounds.maxY)
+    );
+
+    frame.resize(frameWidth, frameHeight);
     frame.clipsContent = true;
 
     // Set frame background to white
@@ -59,8 +70,6 @@ export async function importToFigma(
 
     // Transform root layer coordinates to be relative to frame (0,0)
     // Children should be positioned relative to the frame, not absolute page coordinates
-    const transformedRoot = transformToFrameCoordinates(scaledRoot);
-
     // Import root layer into the frame
     const rootNode = await createNodeWithStyles(transformedRoot, {
       offsetX: 0,
@@ -194,6 +203,25 @@ function transformToFrameCoordinates(layer: LayerMeta): LayerMeta {
     y: 0,
     // Children keep their original coordinates (already relative to parent)
   };
+}
+
+function measureLayerBounds(layer: LayerMeta): { maxX: number; maxY: number } {
+  const bounds = { maxX: 0, maxY: 0 };
+
+  const traverse = (node: LayerMeta, parentX: number, parentY: number): void => {
+    const x = parentX + node.x;
+    const y = parentY + node.y;
+
+    bounds.maxX = Math.max(bounds.maxX, x + node.width);
+    bounds.maxY = Math.max(bounds.maxY, y + node.height);
+
+    for (const child of node.children) {
+      traverse(child, x, y);
+    }
+  };
+
+  traverse(layer, 0, 0);
+  return bounds;
 }
 
 /**

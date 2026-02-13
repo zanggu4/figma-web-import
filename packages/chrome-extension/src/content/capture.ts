@@ -49,7 +49,7 @@ async function captureFullPage(): Promise<CaptureData> {
     throw new Error('Failed to capture document');
   }
 
-  return createCaptureEnvelope(root);
+  return createCaptureEnvelope(root, { fullPage: true });
 }
 
 /**
@@ -84,23 +84,55 @@ async function captureSelection(selector?: string): Promise<CaptureData> {
     throw new Error('No element found to capture. Please provide a selector or select an element.');
   }
 
-  return createCaptureEnvelope(root);
+  return createCaptureEnvelope(root, { fullPage: false });
 }
 
 /**
  * Create the capture data envelope
  */
-function createCaptureEnvelope(root: LayerMeta): CaptureData {
+function createCaptureEnvelope(
+  root: LayerMeta,
+  options: { fullPage: boolean }
+): CaptureData {
+  const viewport = options.fullPage
+    ? getDocumentViewport(root)
+    : {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+
   return {
     version: VERSION,
     capturedAt: new Date().toISOString(),
     sourceUrl: window.location.href,
-    viewport: {
-      width: window.innerWidth,
-      height: window.innerHeight,
-    },
+    viewport,
     root,
   };
+}
+
+function getDocumentViewport(root: LayerMeta): { width: number; height: number } {
+  const docEl = document.documentElement;
+  const body = document.body;
+
+  const width = Math.max(
+    window.innerWidth,
+    docEl?.scrollWidth ?? 0,
+    docEl?.offsetWidth ?? 0,
+    body?.scrollWidth ?? 0,
+    body?.offsetWidth ?? 0,
+    Math.ceil(root.x + root.width)
+  );
+
+  const height = Math.max(
+    window.innerHeight,
+    docEl?.scrollHeight ?? 0,
+    docEl?.offsetHeight ?? 0,
+    body?.scrollHeight ?? 0,
+    body?.offsetHeight ?? 0,
+    Math.ceil(root.y + root.height)
+  );
+
+  return { width, height };
 }
 
 // Inject selection highlight styles
