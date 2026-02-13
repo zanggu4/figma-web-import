@@ -1,0 +1,38 @@
+{
+  "id": "example-local-desktop",
+  "target": {
+    "url": "http://localhost:3000"
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "wait": {
+    "selector": "body",
+    "timeoutMs": 20000,
+    "networkIdle": true,
+    "delayMs": 1000
+  },
+  "capture": {
+    "selector": null
+  },
+  "figma": {
+    "fileKey": "",
+    "nodeId": "",
+    "scale": 1
+  },
+  "comparison": {
+    "maxDiffRatio": 0.03,
+    "minSSIM": 0.97,
+    "pixelmatchThreshold": 0.1
+  },
+  "masks": [
+    {
+      "name": "dynamic-clock-example",
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    }
+  ]
+}

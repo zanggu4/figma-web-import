@@ -1,5 +1,5 @@
 import { h, Fragment } from 'preact';
-import { useCallback, useEffect } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { useUIStore } from './store';
 import type { CaptureData } from '@figma-web-import/shared';
 
@@ -25,6 +25,8 @@ export function App() {
     setFrameName,
     reset,
   } = useUIStore();
+  const [isDragActive, setIsDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle messages from plugin code
   useEffect(() => {
@@ -71,8 +73,7 @@ export function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, [setStatus, setError, setValidationInfo, setImportResult]);
 
-  // Handle paste from clipboard
-  const handlePaste = useCallback(async (text: string) => {
+  const processCaptureText = useCallback((text: string) => {
     setError(null);
     setStatus('validating');
 
@@ -112,6 +113,23 @@ export function App() {
     }
   }, [setCaptureData, setError, setStatus, setFrameName]);
 
+  // Handle paste from clipboard
+  const handlePaste = useCallback((text: string) => {
+    processCaptureText(text);
+  }, [processCaptureText]);
+
+  const readCaptureFile = useCallback(async (file: File) => {
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      processCaptureText(text);
+    } catch {
+      setError('Failed to read file');
+      setStatus('error');
+    }
+  }, [processCaptureText, setError, setStatus]);
+
   // Handle textarea paste
   const handleTextAreaPaste = useCallback(
     (e: ClipboardEvent) => {
@@ -122,6 +140,60 @@ export function App() {
     },
     [handlePaste]
   );
+
+  const handleFileInputChange = useCallback((e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+
+    if (file) {
+      void readCaptureFile(file);
+    }
+
+    // Allow selecting the same file again.
+    target.value = '';
+  }, [readCaptureFile]);
+
+  const handleChooseFile = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (status === 'validating' || status === 'importing') {
+      return;
+    }
+
+    setIsDragActive(true);
+  }, [status]);
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+
+    if (status === 'validating' || status === 'importing') {
+      return;
+    }
+
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      void readCaptureFile(file);
+      return;
+    }
+
+    const text = e.dataTransfer?.getData('text/plain');
+    if (text) {
+      processCaptureText(text);
+    }
+  }, [processCaptureText, readCaptureFile, status]);
 
   // Handle import button
   const handleImport = useCallback(() => {
@@ -162,7 +234,31 @@ export function App() {
       {/* Input Section */}
       {!validationInfo && status !== 'success' && (
         <section class="section">
-          <label class="label">Paste capture data:</label>
+          <label class="label">Paste or drop capture data:</label>
+          <div
+            class={`dropzone${isDragActive ? ' active' : ''}${status === 'validating' || status === 'importing' ? ' disabled' : ''}`}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <p class="dropzone-title">Drop JSON file here</p>
+            <p class="dropzone-subtitle">or choose a file</p>
+            <button
+              class="btn btn-secondary"
+              onClick={handleChooseFile}
+              disabled={status === 'validating' || status === 'importing'}
+            >
+              Choose JSON File
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json,text/json"
+              onChange={handleFileInputChange}
+              style={{ display: 'none' }}
+            />
+          </div>
           <textarea
             class="textarea"
             placeholder='Paste JSON from Chrome extension (Ctrl/Cmd+V)...'

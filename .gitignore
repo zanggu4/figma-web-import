@@ -19,3 +19,5 @@ pnpm-debug.log*
 .vscode/
 *.swp
 *.swo
+
+visual/artifacts/

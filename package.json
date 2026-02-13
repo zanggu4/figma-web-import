@@ -8,9 +8,18 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "visual:capture": "node scripts/visual/capture-web-json.mjs --case visual/cases/example.local.json",
+    "visual:fetch": "node scripts/visual/fetch-figma-image.mjs --case visual/cases/example.local.json",
+    "visual:compare": "node scripts/visual/compare-images.mjs --case visual/cases/example.local.json",
+    "visual:case": "node scripts/visual/run-case.mjs --case visual/cases/example.local.json --mode full",
+    "visual:all": "node scripts/visual/run-all.mjs"
   },
   "devDependencies": {
+    "pixelmatch": "^6.0.0",
+    "playwright": "^1.51.1",
+    "pngjs": "^7.0.0",
+    "ssim.js": "^3.5.0",
     "turbo": "^2.3.0",
     "typescript": "^5.6.3"
   },

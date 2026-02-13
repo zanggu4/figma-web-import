@@ -122,6 +122,55 @@ Load the plugin in Figma:
    - Adjust options if needed
    - Click "Import to Figma"
 
+## Visual Parity Automation
+
+You can automate visual comparison between:
+- target web screenshot (captured by Playwright)
+- imported Figma frame screenshot (fetched from Figma API)
+
+### One-time setup
+
+```bash
+pnpm install
+pnpm --filter @figma-web-import/shared build:iife
+```
+
+Configure case file:
+- `visual/cases/example.local.json`
+
+Configure `.env` values:
+```bash
+cp .env.example .env
+```
+- `FIGMA_TOKEN`
+- `FIGMA_FILE_KEY`
+- `FIGMA_NODE_ID`
+
+### Full run (manual import once, then automated compare)
+
+```bash
+pnpm visual:case
+```
+
+Flow:
+1. Script captures `web.png` + `capture.json`
+2. You paste `capture.json` into Figma plugin and click Import
+3. Script fetches `figma.png`, compares images, and writes report
+
+### Compare only (no wait/prompt)
+
+```bash
+pnpm visual:all -- --mode compare --no-wait
+```
+
+Artifacts are written to `visual/artifacts/<case-id>/`:
+- `web.png`
+- `capture.json`
+- `figma.png`
+- `diff.png`
+- `report.json`
+- `report.md`
+
 ## Supported Conversions
 
 ### Element Mapping

@@ -113,6 +113,38 @@ async function generateHTML() {
       border-color: #18A0FB;
     }
 
+    .dropzone {
+      border: 1px dashed #C7D2E0;
+      border-radius: 8px;
+      background: #FAFCFF;
+      padding: 10px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .dropzone.active {
+      border-color: #18A0FB;
+      background: #EFF6FF;
+    }
+
+    .dropzone.disabled {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    .dropzone-title {
+      font-size: 11px;
+      color: #334155;
+      font-weight: 600;
+    }
+
+    .dropzone-subtitle {
+      font-size: 10px;
+      color: #64748B;
+    }
+
     .btn {
       padding: 8px 16px;
       border: none;
@@ -247,6 +279,9 @@ async function build() {
 }
 
 async function watch() {
+  // Ensure initial outputs exist before entering watch mode.
+  await build();
+
   // Watch main code
   const mainCtx = await esbuild.context({
     ...mainConfig,
@@ -284,10 +319,6 @@ async function watch() {
 
   await mainCtx.watch();
   await uiCtx.watch();
-
-  // Initial build
-  await generateHTML();
-  copyManifest();
 
   console.log('Watching for changes...');
 }
