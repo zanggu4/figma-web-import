@@ -144,7 +144,10 @@ cp .env.example .env
 ```
 - `FIGMA_TOKEN`
 - `FIGMA_FILE_KEY`
-- `FIGMA_NODE_ID`
+- `FIGMA_NODE_ID` (optional)
+- `FIGMA_FRAME_NAME` (recommended for repeated imports)
+
+If `FIGMA_NODE_ID` is empty and `FIGMA_FRAME_NAME` is set, the script resolves the newest matching frame automatically.
 
 ### Full run (manual import once, then automated compare)
 
